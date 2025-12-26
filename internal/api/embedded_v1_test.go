@@ -10,8 +10,13 @@ import (
 func Test(t *testing.T) {
 	t.Run("should run", func(t *testing.T) {
 		db := api.NewDatabase("../../db")
-		err := db.Start()
+		err := db.Close()
 		require.NoError(t, err)
+
+		defer func() {
+			err := db.Close()
+			require.NoError(t, err)
+		}()
 
 		key := "a"
 		value := []byte("this is a test")

@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"fmt"
 	"godb/internal/engine"
 	"godb/internal/tooling/guard"
@@ -8,6 +9,9 @@ import (
 )
 
 type Database struct {
+	ctx     context.Context
+	ctxcncl context.CancelFunc
+
 	// Engine Items
 	wal      *engine.WAL
 	memTable *engine.MemTable
@@ -18,20 +22,33 @@ type Database struct {
 
 	// General Configuration
 	path string
+
 	// MemTable Configuration
 	maxLevel            int
 	skipListProbability int
 	maxSize             int
+
+	// Flusher Configuration
+	flusherMaxWorkers int
 }
 
 func NewDatabase(path string) *Database {
+	ctx := context.Background()
+	ctx, ctxcncl := context.WithCancel(ctx)
+
 	return &Database{
+		ctx:     ctx,
+		ctxcncl: ctxcncl,
+
 		mu: &sync.Mutex{},
 
-		path:                path,
+		path: path,
+
 		maxLevel:            4,
 		skipListProbability: 50,
-		maxSize:             40,
+		maxSize:             10,
+
+		flusherMaxWorkers: 3,
 	}
 }
 
@@ -71,7 +88,10 @@ func (d *Database) Start() error {
 		}
 	}
 
-	d.flusher = engine.NewFlusher()
+	d.flusher = engine.NewFlusher(d.flusherMaxWorkers)
+	if err := d.flusher.Start(d.ctx); err != nil {
+		return fmt.Errorf("flusher start: %w", err)
+	}
 
 	return nil
 }
@@ -110,10 +130,17 @@ func (d *Database) Delete(key string) error {
 
 	err := d.memTable.Delete(key)
 	guard.Assert(err == nil, "This should never be a frozen memtable")
+
 	return nil
 }
 
-func Close() {}
+func (d *Database) Close() error {
+	if err := d.flusher.Stop(); err != nil {
+		return fmt.Errorf("flusher stop: %w", err)
+	}
+
+	return nil
+}
 
 // Helpers
 func (d *Database) searchInROMemTables(key string) ([]byte, bool) {
@@ -139,7 +166,7 @@ func (d *Database) rotateMemTable() {
 		err == nil,
 		`
 		Errors from the memtable creation are from NewSkipList Validation. 
-		Should never accure here
+		Should never happen here
 		`,
 	)
 
