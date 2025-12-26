@@ -33,8 +33,8 @@ func (w WAL) Close() error {
 	return nil
 }
 
-func (w WAL) Append(op byte, key, value []byte) error {
-	entry := w.encodeRecord(op, key, value)
+func (w WAL) Append(op OpType, key, value []byte) error {
+	entry := w.encodeRecord(byte(op), key, value)
 
 	if _, err := w.file.Write(entry); err != nil {
 		return fmt.Errorf("file write: %w", err)
@@ -88,8 +88,8 @@ type WALEntry struct {
 type OpType byte
 
 const (
-	WALDEL = 0
-	WALPUT = 1
+	WALDEL OpType = 0
+	WALPUT OpType = 1
 )
 
 func (w *WAL) Load() ([]WALEntry, error) {

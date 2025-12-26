@@ -44,7 +44,9 @@ func Test(t *testing.T) {
 		v, _ = db.Get("a")
 		require.Equal(t, []byte("hm..."), v)
 
-		db.Delete("a")
+		err = db.Delete("a")
+		require.NoError(t, err)
+
 		_, ok := db.Get("a")
 		require.False(t, ok)
 	})

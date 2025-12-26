@@ -9,7 +9,6 @@ import (
 
 type Database struct {
 	// Engine Items
-	path     string
 	wal      *engine.WAL
 	memTable *engine.MemTable
 	flusher  *engine.Flusher
@@ -17,6 +16,8 @@ type Database struct {
 	// Mutexes
 	mu *sync.Mutex
 
+	// General Configuration
+	path string
 	// MemTable Configuration
 	maxLevel            int
 	skipListProbability int
@@ -25,8 +26,9 @@ type Database struct {
 
 func NewDatabase(path string) *Database {
 	return &Database{
-		path: path,
+		mu: &sync.Mutex{},
 
+		path:                path,
 		maxLevel:            4,
 		skipListProbability: 50,
 		maxSize:             40,
@@ -75,7 +77,7 @@ func (d *Database) Start() error {
 }
 
 func (d *Database) Put(key string, value []byte) error {
-	if err := d.wal.Append(1, []byte(key), value); err != nil {
+	if err := d.wal.Append(engine.WALPUT, []byte(key), value); err != nil {
 		return fmt.Errorf("wal append: %w", err)
 	}
 
@@ -101,9 +103,14 @@ func (d *Database) Get(key string) ([]byte, bool) {
 	return d.searchInROMemTables(key)
 }
 
-func (d *Database) Delete(key string) {
+func (d *Database) Delete(key string) error {
+	if err := d.wal.Append(engine.WALDEL, []byte(key), nil); err != nil {
+		return fmt.Errorf("wal append: %w", err)
+	}
+
 	err := d.memTable.Delete(key)
 	guard.Assert(err == nil, "This should never be a frozen memtable")
+	return nil
 }
 
 func Close() {}
