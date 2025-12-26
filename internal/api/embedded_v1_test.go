@@ -28,10 +28,21 @@ func Test(t *testing.T) {
 		err = db.Put(key, value)
 		require.NoError(t, err)
 
+		key = "k"
+		value = []byte("hm")
+		err = db.Put(key, value)
+		require.NoError(t, err)
+
+		key = "a"
+		value = []byte("hm...")
+		err = db.Put(key, value)
+		require.NoError(t, err)
+
+		require.NoError(t, err)
 		v, _ := db.Get("b")
 		require.Equal(t, []byte("Hi this is me 2"), v)
 		v, _ = db.Get("a")
-		require.Equal(t, []byte("this is a test"), v)
+		require.Equal(t, []byte("hm..."), v)
 
 		db.Delete("a")
 		_, ok := db.Get("a")

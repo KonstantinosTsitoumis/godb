@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"math/rand"
-	"strings"
 )
 
 type node[T any] struct {
@@ -22,21 +21,28 @@ type SkipList[T any] struct {
 	maxLevel    int
 	probability int
 
-	header *node[T]
-	level  int
+	header       *node[T]
+	level        int
+	contentsSize int
+
+	debug [][]string
 }
 
 func NewSkipList[T any](maxLevel, probability int) (*SkipList[T], error) {
 	if probability > 100 || probability < 0 {
 		return nil, errors.ErrUnsupported
 	}
+	if maxLevel <= 0 {
+		return nil, errors.ErrUnsupported
+	}
 
 	nexts := make([]*node[T], maxLevel)
 
 	return &SkipList[T]{
-		header:      &node[T]{Next: nexts},
-		probability: probability,
-		maxLevel:    maxLevel,
+		header:       &node[T]{Next: nexts},
+		probability:  probability,
+		maxLevel:     maxLevel,
+		contentsSize: 0,
 	}, nil
 }
 
@@ -65,6 +71,12 @@ func (s *SkipList[T]) Insert(key string, value T) {
 		n.Next[i] = toUpdate[i].Next[i]
 		toUpdate[i].Next[i] = n
 	}
+
+	// Add to the contentsSize
+	// TODO: define a way to get bytes.
+	// Temporarily just increment content size
+	s.contentsSize += 1
+	s.debug = s.Debug()
 }
 
 func randomLevel(maxLevel int, probability int) int {
@@ -81,7 +93,7 @@ func randomLevel(maxLevel int, probability int) int {
 	return lvl
 }
 
-func (s *SkipList[T]) String() string {
+func (s *SkipList[T]) Debug() [][]string {
 	levels := make([][]string, s.level+1)
 
 	for i := 0; i <= s.level; i++ {
@@ -100,14 +112,7 @@ func (s *SkipList[T]) String() string {
 		levels[i] = level
 	}
 
-	var result strings.Builder
-	for i := s.level; i >= 0; i-- {
-		result.WriteString(fmt.Sprintf("LEVEL %d | ", i))
-		result.WriteString(strings.Join(levels[i], " -> "))
-		result.WriteByte('\n')
-	}
-
-	return result.String()
+	return levels
 }
 
 func (s *SkipList[T]) Search(key string) (T, bool) {
@@ -123,4 +128,8 @@ func (s *SkipList[T]) Search(key string) (T, bool) {
 	}
 
 	return *new(T), false
+}
+
+func (s *SkipList[T]) ContentSize() int {
+	return s.contentsSize
 }
