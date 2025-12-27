@@ -12,10 +12,7 @@ type MemTable struct {
 	frozen bool
 }
 
-var (
-	tombstone         = []byte("__TOMBSTONE__")
-	ErrMemTableFrozen = errors.New("memtable is frozen")
-)
+var ErrMemTableFrozen = errors.New("memtable is frozen")
 
 func NewMemTable(maxLevel, probability int) (*MemTable, error) {
 	sList, err := datastructures.NewSkipList[[]byte](maxLevel, probability)
@@ -55,4 +52,25 @@ func (m *MemTable) Size() int {
 
 func (m *MemTable) Freeze() {
 	m.frozen = true
+}
+
+type MemTableEntry struct {
+	Key       string
+	Value     []byte
+	Tombstone bool
+}
+
+func (m *MemTable) Entries() []MemTableEntry {
+	result := make([]MemTableEntry, 0)
+
+	for k, v := range m.sList.Iter {
+		entry := MemTableEntry{
+			Key:       k,
+			Value:     v,
+			Tombstone: bytes.Equal(v, tombstone),
+		}
+		result = append(result, entry)
+	}
+
+	return result
 }

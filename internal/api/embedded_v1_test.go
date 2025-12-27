@@ -10,11 +10,11 @@ import (
 func Test(t *testing.T) {
 	t.Run("should run", func(t *testing.T) {
 		db := api.NewDatabase("../../db")
-		err := db.Close()
+		err := db.Stop()
 		require.NoError(t, err)
 
 		defer func() {
-			err := db.Close()
+			err := db.Stop()
 			require.NoError(t, err)
 		}()
 

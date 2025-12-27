@@ -133,3 +133,20 @@ func (s *SkipList[T]) Search(key string) (T, bool) {
 func (s *SkipList[T]) ContentSize() int {
 	return s.contentsSize
 }
+
+func (s *SkipList[T]) Iter(yield func(k string, v T) bool) {
+	x := s.header
+
+	for {
+		nxt := x.Next[0]
+		if nxt == nil {
+			return
+		}
+
+		if !yield(nxt.Key, nxt.Value) {
+			return
+		}
+
+		x = nxt
+	}
+}

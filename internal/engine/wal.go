@@ -40,12 +40,15 @@ func (w WAL) Append(op OpType, key, value []byte) error {
 		return fmt.Errorf("file write: %w", err)
 	}
 
+	if err := w.file.Sync(); err != nil {
+		return fmt.Errorf("fsync: %w", err)
+	}
+
 	return nil
 }
 
 const (
 	opBytes     = 1
-	uint32Bytes = 4
 	lengthBytes = uint32Bytes
 	keyLenBytes = uint32Bytes
 	valLenBytes = uint32Bytes

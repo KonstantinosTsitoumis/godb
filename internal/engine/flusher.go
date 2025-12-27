@@ -11,8 +11,10 @@ type Flusher struct {
 	rOnlyMemTables []*MemTable
 	mu             sync.Mutex
 
-	maxWorkers int
-	active     bool
+	maxWorkers           int
+	maxDatablockByteSize int
+
+	active bool
 }
 
 var (
@@ -43,46 +45,49 @@ func (f *Flusher) ROnlyMemTables() []*MemTable {
 }
 
 func (f *Flusher) Start(ctx context.Context) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
 	if f.active {
 		return ErrFlusherAlreadyActive
 	}
 
 	f.fChan = make(chan *MemTable, 3)
 
-	worker := func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case memTable, ok := <-f.fChan:
-				if !ok {
-					return
-				}
-
-				flush(memTable)
-
-				// Delete
-				f.mu.Lock()
-				for i, v := range f.rOnlyMemTables {
-					if v == memTable {
-						f.rOnlyMemTables = append(
-							(f.rOnlyMemTables)[:i],
-							(f.rOnlyMemTables)[i+1:]...,
-						)
-						break
-					}
-				}
-				f.mu.Unlock()
-			}
-		}
-	}
-
 	for range f.maxWorkers {
-		go worker()
+		go f.worker(ctx)
 	}
 
 	f.active = true
 	return nil
+}
+
+func (f *Flusher) worker(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case memTable, ok := <-f.fChan:
+			if !ok {
+				return
+			}
+
+			f.flush(memTable)
+
+			// Delete
+			f.mu.Lock()
+			for i, v := range f.rOnlyMemTables {
+				if v == memTable {
+					f.rOnlyMemTables = append(
+						(f.rOnlyMemTables)[:i],
+						(f.rOnlyMemTables)[i+1:]...,
+					)
+					break
+				}
+			}
+			f.mu.Unlock()
+		}
+	}
 }
 
 func (f *Flusher) Stop() error {
@@ -100,4 +105,6 @@ func (f *Flusher) EnqueueToBeFlushed(m *MemTable) {
 	f.fChan <- m
 }
 
-func flush(memTable *MemTable) {}
+func (f *Flusher) flush(m *MemTable) {
+	_ = NewSSTableFromMemTable(m, f.maxDatablockByteSize)
+}

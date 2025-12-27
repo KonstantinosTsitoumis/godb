@@ -134,7 +134,7 @@ func (d *Database) Delete(key string) error {
 	return nil
 }
 
-func (d *Database) Close() error {
+func (d *Database) Stop() error {
 	if err := d.flusher.Stop(); err != nil {
 		return fmt.Errorf("flusher stop: %w", err)
 	}
@@ -161,6 +161,11 @@ func (d *Database) rotateMemTable() {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
+	// Double checking
+	if d.memTable.Size() < d.maxSize {
+		return
+	}
+
 	newMemTable, err := engine.NewMemTable(d.maxLevel, d.skipListProbability)
 	guard.Assert(
 		err == nil,
@@ -170,8 +175,9 @@ func (d *Database) rotateMemTable() {
 		`,
 	)
 
-	d.memTable.Freeze()
-	d.flusher.AppendROnlyMemTable(d.memTable)
-	d.flusher.EnqueueToBeFlushed(d.memTable)
+	oldMemTable := d.memTable
+	d.flusher.AppendROnlyMemTable(oldMemTable)
+	d.flusher.EnqueueToBeFlushed(oldMemTable)
 	d.memTable = newMemTable
+	oldMemTable.Freeze()
 }
