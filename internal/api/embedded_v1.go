@@ -50,7 +50,7 @@ func NewDatabase(path string) *Database {
 
 		maxLevel:            4,
 		skipListProbability: 50,
-		maxSize:             10,
+		maxSize:             200,
 
 		flusherMaxWorkers:    3,
 		maxDatablockByteSize: 200,

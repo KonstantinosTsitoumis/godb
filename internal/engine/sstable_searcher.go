@@ -193,7 +193,7 @@ func (s *SSTableSearcher) Search(key string) ([]byte, bool, error) {
 
 		restartTable := make([]uint32, restartTableLen)
 		offset := datablockSize - uint32Bytes
-		for i := restartTableLen - 1; i > 0; i-- {
+		for i := restartTableLen - 1; i >= 0; i-- {
 			res := binary.LittleEndian.Uint32(buf[offset-uint32Bytes : offset])
 			restartTable[i] = res
 			offset -= uint32Bytes
@@ -220,7 +220,7 @@ func (s *SSTableSearcher) Search(key string) ([]byte, bool, error) {
 			}
 		}
 
-		offset = searchOffset
+		offset = int(restartTable[searchOffset])
 		previousKey := []byte("")
 		for offset < restartTableStart {
 			sharedKeyLen := binary.LittleEndian.Uint32(buf[offset : offset+uint32Bytes])
@@ -231,13 +231,14 @@ func (s *SSTableSearcher) Search(key string) ([]byte, bool, error) {
 			offset += uint32Bytes
 			keySuffix := buf[offset : offset+int(unSharedKeylen)]
 			offset += int(unSharedKeylen)
-			if bytes.Equal(append(keySuffix, previousKey[:sharedKeyLen]...), k) {
+			currentKey := append(previousKey[:sharedKeyLen], keySuffix...)
+			if bytes.Equal(currentKey, k) {
 				value := buf[offset : offset+int(valueLen)]
 				return value, !bytes.Equal(value, tombstone), nil
 			}
+			previousKey = currentKey
 			offset += int(valueLen)
 		}
-
 	}
 
 	return nil, false, nil

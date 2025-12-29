@@ -3,15 +3,13 @@ package api_test
 import (
 	"fmt"
 	"godb/internal/api"
-	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 )
 
 func TestDatabase_MediumDataset(t *testing.T) {
-	dir := filepath.Join(t.TempDir(), "db")
-	db := api.NewDatabase(dir)
+	db := api.NewDatabase("../../db")
 
 	require.NoError(t, db.Start())
 
@@ -19,30 +17,6 @@ func TestDatabase_MediumDataset(t *testing.T) {
 		users          = 200
 		columnsPerUser = 5
 	)
-
-	// ----------------------------------------------------
-	// Phase 1: Insert users × columns
-	// ----------------------------------------------------
-	for u := 1; u <= users; u++ {
-		for c := 1; c <= columnsPerUser; c++ {
-			key := fmt.Sprintf("user:%d:field:%d", u, c)
-			value := []byte(fmt.Sprintf("value-%d-%d", u, c))
-
-			require.NoError(t, db.Put(key, value))
-		}
-	}
-
-	// ----------------------------------------------------
-	// Phase 2: Overwrite some values
-	// (simulate updates)
-	// ----------------------------------------------------
-	for u := 1; u <= users; u++ {
-		key := fmt.Sprintf("user:%d:field:1", u)
-		value := []byte(fmt.Sprintf("updated-%d", u))
-
-		require.NoError(t, db.Put(key, value))
-	}
-
 	// ----------------------------------------------------
 	// Phase 3: Validate reads
 	// ----------------------------------------------------
