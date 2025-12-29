@@ -1,6 +1,8 @@
 package engine
 
-import "godb/internal/datastructures"
+import (
+	"godb/internal/datastructures"
+)
 
 const (
 	sharedKeyLenBytes      = uint32Bytes
@@ -10,6 +12,7 @@ const (
 	restartTableEntryBytes = uint32Bytes
 	indexKeyLenBytes       = uint32Bytes
 	indexOffsetBytes       = uint32Bytes
+	footerByteSize         = (5 * uint32Bytes)
 )
 
 type (
@@ -19,7 +22,7 @@ type (
 		RestartTableLen uint32
 
 		// Helper, Does not get written to file
-		EntriesSize      int
+		EntriesByteSize  int
 		RestartTableSize int
 	}
 	SSTableDataBlockEntry struct {
@@ -35,22 +38,29 @@ type (
 		Offset uint32
 	}
 	SSTableFooter struct {
-		IndexOffset       uint64
-		IndexSize         uint64
-		BloomFilterOffset uint64
-		BloomFilterSize   uint64
-		MagicNumber       uint64
+		IndexOffset       uint32
+		IndexSize         uint32
+		BloomFilterOffset uint32
+		BloomFilterSize   uint32
+		MagicNumber       uint32
 	}
 )
 
-type SSTable struct {
+type SSTableWrite struct {
 	Datablocks  []*SSTableDataBlock
 	Index       []*SSTableIndexEntry
 	BloomFilter *datastructures.BloomFilter
 	Footer      *SSTableFooter
 }
 
-func NewSSTableFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTable {
+type SSTableRead struct {
+	FileName       string
+	Index          []SSTableIndexEntry
+	BloomFilter    *datastructures.BloomFilter
+	DataBlocksSize int
+}
+
+func NewSSTableWriteFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTableWrite {
 	// prefered Optimization over Readabillity to do only one loop incase we have million of entries
 	const restartInterval = 4
 
@@ -65,7 +75,7 @@ func NewSSTableFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTab
 	currentDataBlock.RestartTable = make([]uint32, 0)
 	datablocks = append(datablocks, currentDataBlock)
 	for _, entry := range entries {
-		if currentDataBlock.RestartTableSize+currentDataBlock.EntriesSize >= datablockMaxEntriesByteSize {
+		if currentDataBlock.RestartTableSize+currentDataBlock.EntriesByteSize >= datablockMaxEntriesByteSize {
 			// Reset for new Datablock
 			currentDataBlock = &SSTableDataBlock{RestartTableSize: restartTableLenBytes}
 			currentDataBlock.RestartTable = make([]uint32, 0)
@@ -79,7 +89,7 @@ func NewSSTableFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTab
 			previousKey = ""
 			currentDataBlock.RestartTable = append(
 				currentDataBlock.RestartTable,
-				uint32(currentDataBlock.EntriesSize),
+				uint32(currentDataBlock.EntriesByteSize),
 			)
 			currentDataBlock.RestartTableSize += restartTableEntryBytes
 			currentDataBlock.RestartTableLen += 1
@@ -126,7 +136,7 @@ func NewSSTableFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTab
 
 		currentDataBlock.Entries = append(currentDataBlock.Entries, dataBlockEntry)
 		bloomFilterSet[entry.Key] = struct{}{}
-		currentDataBlock.EntriesSize += sharedKeyLenBytes + unSharedKeyLenBytes + valueLenBytes + len(keySuffix) + len(value)
+		currentDataBlock.EntriesByteSize += sharedKeyLenBytes + unSharedKeyLenBytes + valueLenBytes + len(keySuffix) + len(value)
 		previousKey = entry.Key
 	}
 
@@ -144,24 +154,24 @@ func NewSSTableFromMemTable(m *MemTable, datablockMaxEntriesByteSize int) *SSTab
 
 		index = append(index, e)
 		indexSize += indexKeyLenBytes + keyLen + indexOffsetBytes
-		offset += datablock.EntriesSize + datablock.RestartTableSize
+		offset += datablock.EntriesByteSize + datablock.RestartTableSize
 	}
 
 	indexOffset := offset
-	bloomfilter := datastructures.NewBloomFilterFromSet(7, uint32(len(bloomFilterSet)*10), bloomFilterSet)
+	bloomFilter := datastructures.NewBloomFilterFromSet(7, uint32(len(bloomFilterSet)*10), bloomFilterSet)
 	bloomFilterOffset := indexOffset + indexSize
 
 	footer := &SSTableFooter{
-		IndexOffset:       uint64(indexOffset),
-		IndexSize:         uint64(indexSize),
-		BloomFilterOffset: uint64(bloomFilterOffset),
-		BloomFilterSize:   uint64(bloomfilter.ByteSize()),
-		MagicNumber:       uint64(DBMagicNumber),
+		IndexOffset:       uint32(indexOffset),
+		IndexSize:         uint32(indexSize),
+		BloomFilterOffset: uint32(bloomFilterOffset),
+		BloomFilterSize:   uint32(bloomFilter.ByteSize()),
+		MagicNumber:       uint32(DBMagicNumber),
 	}
 
-	return &SSTable{
+	return &SSTableWrite{
 		Datablocks:  datablocks,
-		BloomFilter: bloomfilter,
+		BloomFilter: bloomFilter,
 		Index:       index,
 		Footer:      footer,
 	}

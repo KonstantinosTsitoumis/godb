@@ -13,9 +13,10 @@ type Database struct {
 	ctxcncl context.CancelFunc
 
 	// Engine Items
-	wal      *engine.WAL
-	memTable *engine.MemTable
-	flusher  *engine.Flusher
+	wal             *engine.WAL
+	memTable        *engine.MemTable
+	flusher         *engine.Flusher
+	sstableSearcher *engine.SSTableSearcher
 
 	// Mutexes
 	mu *sync.Mutex
@@ -30,6 +31,9 @@ type Database struct {
 
 	// Flusher Configuration
 	flusherMaxWorkers int
+
+	// SStable Configuration
+	maxDatablockByteSize int
 }
 
 func NewDatabase(path string) *Database {
@@ -48,7 +52,8 @@ func NewDatabase(path string) *Database {
 		skipListProbability: 50,
 		maxSize:             10,
 
-		flusherMaxWorkers: 3,
+		flusherMaxWorkers:    3,
+		maxDatablockByteSize: 200,
 	}
 }
 
@@ -73,10 +78,10 @@ func (d *Database) Start() error {
 	if len(entries) > 0 {
 		for _, v := range entries {
 			var err error
-			if v.Op == engine.WALDEL {
-				err = memTable.Delete(string(v.Key))
+			if v.Op() == engine.WALDEL {
+				err = memTable.Delete(string(v.Key()))
 			} else {
-				err = memTable.Insert(string(v.Key), v.Value)
+				err = memTable.Insert(string(v.Key()), v.Value())
 			}
 			guard.Assert(
 				err == nil,
@@ -88,9 +93,14 @@ func (d *Database) Start() error {
 		}
 	}
 
-	d.flusher = engine.NewFlusher(d.flusherMaxWorkers)
+	d.flusher = engine.NewFlusher(d.path, d.flusherMaxWorkers, d.maxDatablockByteSize)
 	if err := d.flusher.Start(d.ctx); err != nil {
 		return fmt.Errorf("flusher start: %w", err)
+	}
+
+	d.sstableSearcher = engine.NewSSTableSearcher(d.path)
+	if err = d.sstableSearcher.Start(); err != nil {
+		return fmt.Errorf("sstable searcher start: %w", err)
 	}
 
 	return nil
@@ -120,7 +130,20 @@ func (d *Database) Get(key string) ([]byte, bool) {
 		return v, true
 	}
 
-	return d.searchInROMemTables(key)
+	v, isTombstone, ok = d.searchInROMemTables(key)
+	switch {
+	case isTombstone:
+		return nil, false
+	case ok:
+		return v, true
+	}
+
+	v, ok, err := d.sstableSearcher.Search(key)
+	if err != nil {
+		return []byte{}, false
+	}
+
+	return v, ok
 }
 
 func (d *Database) Delete(key string) error {
@@ -143,18 +166,18 @@ func (d *Database) Stop() error {
 }
 
 // Helpers
-func (d *Database) searchInROMemTables(key string) ([]byte, bool) {
+func (d *Database) searchInROMemTables(key string) ([]byte, bool, bool) {
 	for i := len(d.flusher.ROnlyMemTables()) - 1; i >= 0; i-- {
 		v, isTombstone, ok := d.flusher.ROnlyMemTables()[i].Search(key)
 		switch {
 		case isTombstone:
-			return nil, false
+			return nil, true, false
 		case ok:
-			return v, true
+			return v, false, false
 		}
 	}
 
-	return nil, false
+	return nil, false, false
 }
 
 func (d *Database) rotateMemTable() {
@@ -179,5 +202,6 @@ func (d *Database) rotateMemTable() {
 	d.flusher.AppendROnlyMemTable(oldMemTable)
 	d.flusher.EnqueueToBeFlushed(oldMemTable)
 	d.memTable = newMemTable
+	d.wal.Append(engine.WALFLUSH, nil, nil)
 	oldMemTable.Freeze()
 }

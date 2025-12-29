@@ -1,6 +1,7 @@
 package engine_test
 
 import (
+	_ "context"
 	"godb/internal/engine"
 	"testing"
 
@@ -37,6 +38,7 @@ func TestMemTableToSSTable(t *testing.T) {
 	mem.Insert("orange", []byte("fruit"))
 	mem.Insert("papaya", []byte("fruit"))
 	mem.Insert("peach", []byte("fruit"))
+	mem.Delete("apple")
 	mem.Insert("pear", []byte("fruit"))
 	mem.Insert("pineapple", []byte("fruit"))
 	mem.Insert("plum", []byte("fruit"))
@@ -44,9 +46,18 @@ func TestMemTableToSSTable(t *testing.T) {
 	mem.Insert("raspberry", []byte("fruit"))
 	mem.Insert("strawberry", []byte("fruit"))
 
-	res := engine.NewSSTableFromMemTable(mem, 500)
-	ok := res.BloomFilter.Contains([]byte("strawberry"))
-	require.True(t, ok)
-	ok = res.BloomFilter.Contains([]byte("Nope"))
-	require.False(t, ok)
+	// f := engine.NewFlusher("../../db", 3, 1000)
+	// err = f.Start(context.Background())
+	// require.NoError(t, err)
+	// f.EnqueueToBeFlushed(mem)
+
+	s := engine.NewSSTableSearcher("../../db")
+	err = s.Start()
+	require.NoError(t, err)
+	val, _, err := s.Search("apple")
+	require.NoError(t, err)
+	require.Equal(t, val, []byte("__TOMBSTONE__"))
+
+	// err = f.Stop()
+	require.NoError(t, err)
 }

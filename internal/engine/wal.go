@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"godb/internal/tooling/guard"
 	"hash/crc32"
 	"io"
 	"os"
@@ -79,24 +80,49 @@ func (w WAL) encodeRecord(op byte, key, value []byte) []byte {
 	return entry
 }
 
-type WALEntry struct {
-	Op     OpType
-	KeyLen uint32
-	ValLen uint32
-	Key    []byte
-	Value  []byte
-	Crc32  uint32
+type WALEntry interface {
+	Op() OpType
+}
+
+type WALMemEntry struct {
+	op     OpType
+	keyLen uint32
+	valLen uint32
+	key    []byte
+	value  []byte
+	crc32  uint32
+}
+
+func (w WALMemEntry) Op() OpType {
+	return w.op
+}
+
+func (w WALMemEntry) Key() []byte {
+	return w.key
+}
+
+func (w WALMemEntry) Value() []byte {
+	return w.value
+}
+
+type WALMemFlush struct {
+	op OpType
+}
+
+func (w WALMemFlush) Op() OpType {
+	return w.op
 }
 
 type OpType byte
 
 const (
-	WALDEL OpType = 0
-	WALPUT OpType = 1
+	WALDEL   OpType = 0
+	WALPUT   OpType = 1
+	WALFLUSH OpType = 2
 )
 
-func (w *WAL) Load() ([]WALEntry, error) {
-	var result []WALEntry
+func (w *WAL) Load() ([]WALMemEntry, error) {
+	result := make([]WALMemEntry, 0)
 
 	for {
 		lengthBuf := make([]byte, lengthBytes)
@@ -120,17 +146,26 @@ func (w *WAL) Load() ([]WALEntry, error) {
 		}
 
 		entry, err := decodeRecord(record)
+
+		if entry.Op() == WALFLUSH {
+			result = make([]WALMemEntry, 0)
+			continue
+		}
+
+		memEntry, ok := entry.(WALMemEntry)
+		guard.Assert(ok, "This should always be a walmementry")
+
 		if err != nil {
 			return nil, err
 		}
 
-		result = append(result, entry)
+		result = append(result, memEntry)
 	}
 }
 
 func decodeRecord(buf []byte) (WALEntry, error) {
 	if len(buf) < opBytes+keyLenBytes+valLenBytes+crc32Bytes {
-		return WALEntry{}, errors.New("record too short")
+		return WALMemEntry{}, errors.New("record too short")
 	}
 
 	payloadLen := len(buf) - crc32Bytes
@@ -140,7 +175,7 @@ func decodeRecord(buf []byte) (WALEntry, error) {
 	actualCRC := crc32.ChecksumIEEE(payload)
 
 	if expectedCRC != actualCRC {
-		return WALEntry{}, errors.New("crc32 mismatch")
+		return WALMemEntry{}, errors.New("crc32 mismatch")
 	}
 
 	var off uint32 = 0
@@ -155,7 +190,7 @@ func decodeRecord(buf []byte) (WALEntry, error) {
 	off += valLenBytes
 
 	if int(off+keyLen+valLen) != payloadLen {
-		return WALEntry{}, errors.New("length mismatch")
+		return WALMemEntry{}, errors.New("length mismatch")
 	}
 
 	key := payload[off : off+keyLen]
@@ -163,13 +198,13 @@ func decodeRecord(buf []byte) (WALEntry, error) {
 
 	value := payload[off : off+valLen]
 
-	return WALEntry{
-		Op:     OpType(op),
-		KeyLen: keyLen,
-		ValLen: valLen,
-		Key:    key,
-		Value:  value,
-		Crc32:  expectedCRC,
+	return WALMemEntry{
+		op:     OpType(op),
+		keyLen: keyLen,
+		valLen: valLen,
+		key:    key,
+		value:  value,
+		crc32:  expectedCRC,
 	}, nil
 }
 

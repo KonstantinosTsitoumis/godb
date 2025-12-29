@@ -6,6 +6,9 @@ var (
 )
 
 const (
-	uint32Bytes          = 4
-	DBMagicNumber uint32 = 1337
+	uint32Bytes                 = 4
+	DBMagicNumber        uint32 = 1337
+	SSTablesDir                 = "data"
+	SSTableFileSuffix           = ".sst"
+	SSTableFileSuffixLen        = len(SSTableFileSuffix)
 )

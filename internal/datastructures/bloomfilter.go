@@ -21,7 +21,7 @@ func hash2(data []byte) uint32 {
 }
 
 func NewBloomFilterFromSet(numOfHashFuncs, NumOfBits uint32, set map[string]struct{}) *BloomFilter {
-	b := NewBloomFilter(numOfHashFuncs, NumOfBits)
+	b := NewBloomFilter(numOfHashFuncs, NumOfBits, nil)
 
 	for k := range set {
 		for _, pos := range b.getPositions([]byte(k)) {
@@ -34,9 +34,13 @@ func NewBloomFilterFromSet(numOfHashFuncs, NumOfBits uint32, set map[string]stru
 	return b
 }
 
-func NewBloomFilter(numOfHashFuncs, NumOfBits uint32) *BloomFilter {
+func NewBloomFilter(numOfHashFuncs, NumOfBits uint32, bitArray []byte) *BloomFilter {
+	if bitArray == nil {
+		bitArray = make([]byte, (NumOfBits+7)/8)
+	}
+
 	return &BloomFilter{
-		BitArray:       make([]byte, (NumOfBits+7)/8),
+		BitArray:       bitArray,
 		NumOfHashFuncs: numOfHashFuncs,
 		NumOfBits:      NumOfBits,
 	}
